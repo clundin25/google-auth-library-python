@@ -18,14 +18,23 @@
 class GoogleAuthError(Exception):
     """Base class for all google.auth errors."""
 
+    def is_retryable(self):
+        return False
+
 
 class TransportError(GoogleAuthError):
     """Used to indicate an error occurred during an HTTP request."""
+
+    def is_retryable(self):
+        return True
 
 
 class RefreshError(GoogleAuthError):
     """Used to indicate that an refreshing the credentials' access token
     failed."""
+
+    def is_retryable(self):
+        return True
 
 
 class UserAccessTokenError(GoogleAuthError):
