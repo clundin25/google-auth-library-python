@@ -61,3 +61,13 @@ class ReauthFailError(RefreshError):
 
 class ReauthSamlChallengeFailError(ReauthFailError):
     """An exception for SAML reauth challenge failures."""
+
+
+def is_retryable(exception: GoogleAuthError):
+    retryable_errors = {
+        TransportError,
+        RefreshError,
+        ReauthFailError,
+        ReauthSamlChallengeFailError,
+    }
+    return type(exception) in retryable_errors
