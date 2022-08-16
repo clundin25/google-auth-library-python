@@ -14,6 +14,7 @@
 
 import datetime
 import functools
+import itertools
 import os
 import sys
 
@@ -28,6 +29,7 @@ from six.moves import http_client
 from google.auth import environment_vars
 from google.auth import exceptions
 import google.auth.credentials
+import google.auth.transport
 import google.auth.transport._custom_tls_signer
 import google.auth.transport._mtls_helper
 import google.auth.transport.requests
@@ -536,6 +538,61 @@ class TestAuthorizedSession(object):
         )
 
         authed_session.close()  # no raise
+
+    @pytest.mark.parametrize(
+        "attempt, status_code",
+        itertools.product(
+            [x for x in range(0, google.auth.transport.DEFAULT_MAX_REFRESH_ATTEMPTS)],
+            google.auth.transport.DEFAULT_RETRYABLE_STATUS_CODES
+            + google.auth.transport.DEFAULT_REFRESH_STATUS_CODES,
+        ),
+    )
+    def test_default_retry_behavior_should_retry(self, attempt, status_code):
+        authed_session = google.auth.transport.requests.AuthorizedSession(mock.Mock())
+
+        assert authed_session._can_retry(attempt=attempt, status_code=status_code)
+
+    def test_default_retry_behavior_should_not_retry_too_many_attempts(self):
+        authed_session = google.auth.transport.requests.AuthorizedSession(mock.Mock())
+        assert not authed_session._can_retry(
+            attempt=google.auth.transport.DEFAULT_MAX_REFRESH_ATTEMPTS + 3,
+            status_code=google.auth.transport.DEFAULT_REFRESH_STATUS_CODES[0],
+        )
+
+    def test_default_retry_behavior_should_not_retry_wrong_status_codes(self):
+        authed_session = google.auth.transport.requests.AuthorizedSession(mock.Mock())
+        for status_code in range(100, 600):
+            if (
+                status_code not in google.auth.transport.DEFAULT_RETRYABLE_STATUS_CODES
+                and status_code
+                not in google.auth.transport.DEFAULT_REFRESH_STATUS_CODES
+            ):
+                assert not authed_session._can_retry(attempt=0, status_code=status_code)
+
+
+class TestNoRetryAuthorizedSession(object):
+    @mock.patch.object(requests.adapters.HTTPAdapter, "__init__", return_value=None)
+    def test_http_adapter_no_rety(self, mock_adapter):
+        _ = google.auth.transport.requests.AuthorizedSession(
+            mock.Mock(), should_retry=False
+        )
+        # HTTP Adapter should never have been built with retries
+        assert not mock_adapter.assert_any_call()
+
+    @pytest.mark.parametrize(
+        "attempt, status_code",
+        itertools.product(
+            [x for x in range(0, google.auth.transport.DEFAULT_MAX_REFRESH_ATTEMPTS)],
+            google.auth.transport.DEFAULT_RETRYABLE_STATUS_CODES
+            + google.auth.transport.DEFAULT_REFRESH_STATUS_CODES,
+        ),
+    )
+    def test_default_retry_behavior_should_never_retry(self, attempt, status_code):
+        authed_session = google.auth.transport.requests.AuthorizedSession(
+            mock.Mock(), should_retry=False
+        )
+
+        assert not authed_session._can_retry(attempt=attempt, status_code=status_code)
 
 
 class TestMutualTlsOffloadAdapter(object):

@@ -195,7 +195,23 @@ class Request(transport.Request):
             )
             return _Response(response)
         except requests.exceptions.RequestException as caught_exc:
-            new_exc = exceptions.TransportError(caught_exc)
+            retryable = False
+            if caught_exc.response is not None:
+                retryable = (
+                    caught_exc.response.status_code
+                    in transport.DEFAULT_REFRESH_STATUS_CODES
+                    or caught_exc.response.status_code
+                    in transport.DEFAULT_RETRYABLE_STATUS_CODES
+                )
+            elif isinstance(caught_exc, requests.exceptions.Timeout):
+                retryable = True
+            elif isinstance(caught_exc, requests.exceptions.ReadTimeout):
+                retryable = True
+            elif isinstance(caught_exc, requests.exceptions.ConnectionError):
+                retryable = True
+            elif isinstance(caught_exc, requests.exceptions.RetryError):
+                retryable = True
+            new_exc = exceptions.TransportError(caught_exc, retryable=retryable)
             six.raise_from(new_exc, caught_exc)
 
 
@@ -389,6 +405,9 @@ class AuthorizedSession(requests.Session):
         default_host (Optional[str]): A host like "pubsub.googleapis.com".
             This is used when a self-signed JWT is created from service
             account credentials.
+        should_retry (bool): Enable or disable request retry behavior.
+            This will override the retries specified by refresh_status_codes max_refresh_attempts.
+            Defaults to True.
     """
 
     def __init__(
@@ -399,6 +418,7 @@ class AuthorizedSession(requests.Session):
         refresh_timeout=None,
         auth_request=None,
         default_host=None,
+        should_retry=True,
     ):
         super(AuthorizedSession, self).__init__()
         self.credentials = credentials
@@ -407,6 +427,7 @@ class AuthorizedSession(requests.Session):
         self._refresh_timeout = refresh_timeout
         self._is_mtls = False
         self._default_host = default_host
+        self._should_retry = should_retry
 
         if auth_request is None:
             self._auth_request_session = requests.Session()
@@ -414,8 +435,11 @@ class AuthorizedSession(requests.Session):
             # Using an adapter to make HTTP requests robust to network errors.
             # This adapter retrys HTTP requests when network errors occur
             # and the requests seems safely retryable.
-            retry_adapter = requests.adapters.HTTPAdapter(max_retries=3)
-            self._auth_request_session.mount("https://", retry_adapter)
+            if self._should_retry:
+                retry_adapter = requests.adapters.HTTPAdapter(
+                    max_retries=self._max_refresh_attempts
+                )
+                self._auth_request_session.mount("https://", retry_adapter)
 
             # Do not pass `self` as the session here, as it can lead to
             # infinite recursion.
@@ -561,10 +585,7 @@ class AuthorizedSession(requests.Session):
         # request.
         # A stored token may expire between the time it is retrieved and
         # the time the request is made, so we may need to try twice.
-        if (
-            response.status_code in self._refresh_status_codes
-            and _credential_refresh_attempt < self._max_refresh_attempts
-        ):
+        if self._can_retry(_credential_refresh_attempt, response.status_code):
 
             _LOGGER.info(
                 "Refreshing credentials due to a %s response. Attempt %s/%s.",
@@ -609,3 +630,19 @@ class AuthorizedSession(requests.Session):
         if self._auth_request_session is not None:
             self._auth_request_session.close()
         super(AuthorizedSession, self).close()
+
+    def _can_retry(self, attempt, status_code):
+        """Returns true if the AuthorizedSession can retry. False otherwise"""
+        if not self._should_retry:
+            return False
+
+        if attempt >= self._max_refresh_attempts:
+            return False
+
+        if (
+            status_code not in transport.DEFAULT_RETRYABLE_STATUS_CODES
+            and status_code not in transport.DEFAULT_REFRESH_STATUS_CODES
+        ):
+            return False
+
+        return True
