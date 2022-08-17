@@ -113,7 +113,9 @@ class Credentials(credentials.Scoped, credentials.CredentialsWithQuotaProject):
                 request, service_account=self._service_account_email, scopes=scopes
             )
         except exceptions.TransportError as caught_exc:
-            new_exc = exceptions.RefreshError(caught_exc, retryable=caught_exc.retryable)
+            new_exc = exceptions.RefreshError(
+                caught_exc, retryable=caught_exc.retryable
+            )
             six.raise_from(new_exc, caught_exc)
 
     @property
@@ -351,7 +353,9 @@ class IDTokenCredentials(credentials.CredentialsWithQuotaProject, credentials.Si
             params = {"audience": self._target_audience, "format": "full"}
             id_token = _metadata.get(request, path, params=params)
         except exceptions.TransportError as caught_exc:
-            new_exc = exceptions.RefreshError(caught_exc, retryable=caught_exc.retryable)
+            new_exc = exceptions.RefreshError(
+                caught_exc, retryable=caught_exc.retryable
+            )
             six.raise_from(new_exc, caught_exc)
 
         _, payload, _, _ = jwt._unverified_decode(id_token)

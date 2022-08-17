@@ -18,30 +18,22 @@
 class GoogleAuthError(Exception):
     """Base class for all google.auth errors."""
 
-
-class TransportError(GoogleAuthError):
-    """Used to indicate an error occurred during an HTTP request."""
-
     def __init__(self, *args, retryable=False):
-        super(TransportError, self).__init__(*args)
+        super(GoogleAuthError, self).__init__(*args)
         self._retryable = retryable
 
     @property
     def retryable(self):
         return self._retryable
+
+
+class TransportError(GoogleAuthError):
+    """Used to indicate an error occurred during an HTTP request."""
 
 
 class RefreshError(GoogleAuthError):
     """Used to indicate that an refreshing the credentials' access token
     failed."""
-
-    def __init__(self, *args, retryable=False):
-        super(RefreshError, self).__init__(*args)
-        self._retryable = retryable
-
-    @property
-    def retryable(self):
-        return self._retryable
 
 
 class UserAccessTokenError(GoogleAuthError):
@@ -60,6 +52,10 @@ class MutualTLSChannelError(GoogleAuthError):
 class ClientCertError(GoogleAuthError):
     """Used to indicate that client certificate is missing or invalid."""
 
+    @property
+    def retryable(self):
+        return False
+
 
 class OAuthError(GoogleAuthError):
     """Used to indicate an error occurred during an OAuth related HTTP
@@ -69,16 +65,10 @@ class OAuthError(GoogleAuthError):
 class ReauthFailError(RefreshError):
     """An exception for when reauth failed."""
 
-    def __init__(self, message=None, retryable=False):
-        super(ReauthFailError, self).__init__(
-            "Reauthentication failed. {0}".format(message)
-        )
-        self._retryable = retryable
-
-    @property
-    def retryable(self):
-        return self._retryable
-
 
 class ReauthSamlChallengeFailError(ReauthFailError):
     """An exception for SAML reauth challenge failures."""
+
+
+class RetryError(GoogleAuthError):
+    """Indicates that the auth library ran out of retries."""
