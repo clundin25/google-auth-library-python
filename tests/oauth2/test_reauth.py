@@ -225,7 +225,7 @@ def test__obtain_rapt_not_authenticated():
         with mock.patch("google.oauth2.reauth.RUN_CHALLENGE_RETRY_LIMIT", 0):
             with pytest.raises(exceptions.ReauthFailError) as excinfo:
                 reauth._obtain_rapt(MOCK_REQUEST, "token", None)
-            assert excinfo.match(r"Reauthentication failed")
+            assert excinfo.match(r"Failed to obtain rapt token.")
 
 
 def test_get_rapt_token():
