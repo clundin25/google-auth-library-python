@@ -51,9 +51,9 @@ def test__handle_error_response():
     response_data = {"error": "help", "error_description": "I'm alive"}
 
     with pytest.raises(exceptions.RefreshError) as excinfo:
-        _client._handle_error_response(response_data, http_client.INTERNAL_SERVER_ERROR)
+        _client._handle_error_response(response_data, http_client.BAD_REQUEST)
 
-    assert excinfo.value.retryable
+    assert not excinfo.value.retryable
     assert excinfo.match(r"help: I\'m alive")
 
 
@@ -246,8 +246,9 @@ def test_jwt_grant_no_access_token():
         }
     )
 
-    with pytest.raises(exceptions.RefreshError):
+    with pytest.raises(exceptions.RefreshError) as excinfo:
         _client.jwt_grant(request, "http://example.com", "assertion_value")
+    assert excinfo.value.retryable
 
 
 def test_id_token_jwt_grant():
@@ -282,8 +283,9 @@ def test_id_token_jwt_grant_no_access_token():
         }
     )
 
-    with pytest.raises(exceptions.RefreshError):
+    with pytest.raises(exceptions.RefreshError) as excinfo:
         _client.id_token_jwt_grant(request, "http://example.com", "assertion_value")
+    assert excinfo.value.retryable
 
 
 @mock.patch("google.auth._helpers.utcnow", return_value=datetime.datetime.min)
@@ -375,10 +377,11 @@ def test_refresh_grant_no_access_token():
         }
     )
 
-    with pytest.raises(exceptions.RefreshError):
+    with pytest.raises(exceptions.RefreshError) as excinfo:
         _client.refresh_grant(
             request, "http://example.com", "refresh_token", "client_id", "client_secret"
         )
+    assert excinfo.value.retryable
 
 
 @mock.patch("google.oauth2._client._parse_expiry", return_value=None)

@@ -80,9 +80,8 @@ class RequestResponseTests(object):
     def test_request_with_timeout_failure(self, server):
         request = self.make_request()
 
-        with pytest.raises(exceptions.TransportError) as excinfo:
+        with pytest.raises(exceptions.TransportError):
             request(url=server.url + "/wait", method="GET", timeout=1)
-        assert excinfo.value.retryable
 
     def test_request_headers(self, server):
         request = self.make_request()
@@ -105,6 +104,5 @@ class RequestResponseTests(object):
 
     def test_connection_error(self):
         request = self.make_request()
-        with pytest.raises(exceptions.TransportError) as excinfo:
+        with pytest.raises(exceptions.TransportError):
             request(url="http://{}".format(NXDOMAIN), method="GET")
-        assert excinfo.value.retryable

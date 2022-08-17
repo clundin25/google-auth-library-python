@@ -24,6 +24,7 @@ from six.moves import urllib
 from google.auth import _helpers
 from google.auth import _jwt_async as jwt
 from google.auth import exceptions
+from google.auth import transport
 from google.oauth2 import _client as sync_client
 from google.oauth2 import _client_async as _client
 from tests.oauth2 import test__client as test_client
@@ -95,8 +96,9 @@ async def test__token_endpoint_request_json():
 async def test__token_endpoint_request_error():
     request = make_request({}, status=http_client.BAD_REQUEST)
 
-    with pytest.raises(exceptions.RefreshError):
+    with pytest.raises(exceptions.RefreshError) as excinfo:
         await _client._token_endpoint_request(request, "http://example.com", {})
+    assert not excinfo.value.retryable
 
 
 @pytest.mark.asyncio
@@ -105,19 +107,21 @@ async def test__token_endpoint_request_internal_failure_error():
         {"error_description": "internal_failure"}, status=http_client.BAD_REQUEST
     )
 
-    with pytest.raises(exceptions.RefreshError):
+    with pytest.raises(exceptions.RefreshError) as excinfo:
         await _client._token_endpoint_request(
             request, "http://example.com", {"error_description": "internal_failure"}
         )
+    assert excinfo.value.retryable
 
     request = make_request(
-        {"error": "internal_failure"}, status=http_client.BAD_REQUEST
+        {"error": "internal_failure"}, status=http_client.INTERNAL_SERVER_ERROR
     )
 
     with pytest.raises(exceptions.RefreshError):
         await _client._token_endpoint_request(
             request, "http://example.com", {"error": "internal_failure"}
         )
+    assert excinfo.value.retryable
 
 
 def verify_request_params(request, params):
@@ -161,8 +165,9 @@ async def test_jwt_grant_no_access_token():
         }
     )
 
-    with pytest.raises(exceptions.RefreshError):
+    with pytest.raises(exceptions.RefreshError) as excinfo:
         await _client.jwt_grant(request, "http://example.com", "assertion_value")
+    assert excinfo.value.retryable
 
 
 @pytest.mark.asyncio
@@ -200,10 +205,11 @@ async def test_id_token_jwt_grant_no_access_token():
         }
     )
 
-    with pytest.raises(exceptions.RefreshError):
+    with pytest.raises(exceptions.RefreshError) as excinfo:
         await _client.id_token_jwt_grant(
             request, "http://example.com", "assertion_value"
         )
+    assert excinfo.value.retryable
 
 
 @mock.patch("google.auth._helpers.utcnow", return_value=datetime.datetime.min)
@@ -298,7 +304,125 @@ async def test_refresh_grant_no_access_token():
         }
     )
 
-    with pytest.raises(exceptions.RefreshError):
+    with pytest.raises(exceptions.RefreshError) as excinfo:
         await _client.refresh_grant(
             request, "http://example.com", "refresh_token", "client_id", "client_secret"
         )
+    assert excinfo.value.retryable
+
+
+@pytest.mark.asyncio
+@mock.patch("google.oauth2._client._parse_expiry", return_value=None)
+@mock.patch.object(_client, "_token_endpoint_request", autospec=True)
+async def test_jwt_grant_retry_default(mock_token_endpoint_request, mock_expiry):
+    _ = await _client.jwt_grant(mock.Mock(), mock.Mock(), mock.Mock())
+    mock_token_endpoint_request.assert_called_with(
+        mock.ANY, mock.ANY, mock.ANY, should_retry=True
+    )
+
+
+@pytest.mark.parametrize("should_retry", [True, False])
+@mock.patch("google.oauth2._client._parse_expiry", return_value=None)
+@mock.patch.object(_client, "_token_endpoint_request", autospec=True)
+async def test_jwt_grant_retry_with_retry(
+    mock_token_endpoint_request, mock_expiry, should_retry
+):
+    _ = await _client.jwt_grant(
+        mock.Mock(), mock.Mock(), mock.Mock(), should_retry=should_retry
+    )
+    mock_token_endpoint_request.assert_called_with(
+        mock.ANY, mock.ANY, mock.ANY, should_retry=should_retry
+    )
+
+
+@mock.patch("google.auth.jwt.decode", return_value={"exp": 0})
+@mock.patch.object(_client, "_token_endpoint_request", autospec=True)
+async def test_id_token_jwt_grant_retry_default(
+    mock_token_endpoint_request, mock_jwt_decode
+):
+    _ = await _client.id_token_jwt_grant(mock.Mock(), mock.Mock(), mock.Mock())
+    mock_token_endpoint_request.assert_called_with(
+        mock.ANY, mock.ANY, mock.ANY, should_retry=True
+    )
+
+
+@pytest.mark.parametrize("should_retry", [True, False])
+@mock.patch("google.auth.jwt.decode", return_value={"exp": 0})
+@mock.patch.object(_client, "_token_endpoint_request", autospec=True)
+async def test_id_token_jwt_grant_retry_with_retry(
+    mock_token_endpoint_request, mock_jwt_decode, should_retry
+):
+    _ = await _client.id_token_jwt_grant(
+        mock.Mock(), mock.Mock(), mock.Mock(), should_retry=should_retry
+    )
+    mock_token_endpoint_request.assert_called_with(
+        mock.ANY, mock.ANY, mock.ANY, should_retry=should_retry
+    )
+
+
+@mock.patch("google.oauth2._client._parse_expiry", return_value=None)
+@mock.patch.object(_client, "_token_endpoint_request", autospec=True)
+async def test_refresh_grant_retry_default(
+    mock_token_endpoint_request, mock_parse_expiry
+):
+    _ = await _client.refresh_grant(
+        mock.Mock(), mock.Mock(), mock.Mock(), mock.Mock(), mock.Mock()
+    )
+    mock_token_endpoint_request.assert_called_with(
+        mock.ANY, mock.ANY, mock.ANY, should_retry=True
+    )
+
+
+@pytest.mark.parametrize("should_retry", [True, False])
+@mock.patch("google.oauth2._client._parse_expiry", return_value=None)
+@mock.patch.object(_client, "_token_endpoint_request", autospec=True)
+async def test_refresh_grant_retry_with_retry(
+    mock_token_endpoint_request, mock_parse_expiry, should_retry
+):
+    _ = await _client.refresh_grant(
+        mock.Mock(),
+        mock.Mock(),
+        mock.Mock(),
+        mock.Mock(),
+        mock.Mock(),
+        should_retry=should_retry,
+    )
+    mock_token_endpoint_request.assert_called_with(
+        mock.ANY, mock.ANY, mock.ANY, should_retry=should_retry
+    )
+
+
+async def test__token_endpoint_request_no_throw_should_retry():
+    response_data = {"error": "help", "error_description": "I'm alive"}
+    body = "dummy body"
+
+    mock_response = mock.create_autospec(transport.Response, instance=True)
+    mock_response.status = http_client.INTERNAL_SERVER_ERROR
+    mock_response.data = json.dumps(response_data).encode("utf-8")
+
+    mock_request = mock.create_autospec(transport.Request)
+    mock_request.return_value = mock_response
+
+    _ = await _client._token_endpoint_request_no_throw(
+        mock_request, mock.Mock(), body, mock.Mock(), mock.Mock(), should_retry=True
+    )
+
+    assert mock_request.call_count == 2
+
+
+async def test__token_endpoint_request_no_throw_should_not_retry():
+    response_data = {"error": "help", "error_description": "I'm alive"}
+    body = "dummy body"
+
+    mock_response = mock.create_autospec(transport.Response, instance=True)
+    mock_response.status = http_client.INTERNAL_SERVER_ERROR
+    mock_response.data = json.dumps(response_data).encode("utf-8")
+
+    mock_request = mock.create_autospec(transport.Request)
+    mock_request.return_value = mock_response
+
+    _ = await _client._token_endpoint_request_no_throw(
+        mock_request, mock.Mock(), body, mock.Mock(), mock.Mock(), should_retry=False
+    )
+
+    assert mock_request.call_count == 1

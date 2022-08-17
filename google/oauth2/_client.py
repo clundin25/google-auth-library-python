@@ -33,10 +33,7 @@ from six.moves import urllib
 from google.auth import _helpers
 from google.auth import exceptions
 from google.auth import jwt
-from google.auth.transport import (
-    DEFAULT_RETRYABLE_STATUS_CODES,
-    DEFAULT_REFRESH_STATUS_CODES,
-)
+from google.auth import transport
 
 _URLENCODED_CONTENT_TYPE = "application/x-www-form-urlencoded"
 _JSON_CONTENT_TYPE = "application/json"
@@ -54,8 +51,8 @@ def _handle_error_response(response_data, status_code):
         google.auth.exceptions.RefreshError: The errors contained in response_data.
     """
     retryable = (
-        status_code in DEFAULT_REFRESH_STATUS_CODES
-        or status_code in DEFAULT_RETRYABLE_STATUS_CODES
+        status_code in transport.DEFAULT_REFRESH_STATUS_CODES
+        or status_code in transport.DEFAULT_RETRYABLE_STATUS_CODES
     )
 
     if isinstance(response_data, six.string_types):
@@ -67,6 +64,10 @@ def _handle_error_response(response_data, status_code):
     # If no details could be extracted, use the response data.
     except (KeyError, ValueError):
         error_details = json.dumps(response_data)
+
+    # Per Oauth 2.0 RFC https://www.rfc-editor.org/rfc/rfc6749.html#section-4.1.2.1
+    # This is needed because a redirect will not return a 500 status code.
+    retryable = retryable or "internal_failure" in error_details
 
     raise exceptions.RefreshError(error_details, response_data, retryable=retryable)
 
@@ -152,10 +153,17 @@ def _token_endpoint_request_no_throw(
             # For a failed response, response_body could be a string
             try:
                 response_data = json.loads(response_body)
+                error_desc = response_data.get("error_description") or ""
+                error_code = response_data.get("error") or ""
                 if (
                     (
-                        response.status in DEFAULT_RETRYABLE_STATUS_CODES
-                        or response.status in DEFAULT_REFRESH_STATUS_CODES
+                        (
+                            response.status in transport.DEFAULT_RETRYABLE_STATUS_CODES
+                            or response.status in transport.DEFAULT_REFRESH_STATUS_CODES
+                        )
+                        or any(
+                            e == "internal_failure" for e in (error_code, error_desc)
+                        )
                     )
                     and retry < 1
                     and should_retry
@@ -297,7 +305,9 @@ def id_token_jwt_grant(request, token_uri, assertion, should_retry=True):
     try:
         id_token = response_data["id_token"]
     except KeyError as caught_exc:
-        new_exc = exceptions.RefreshError("No ID token in response.", response_data)
+        new_exc = exceptions.RefreshError(
+            "No ID token in response.", response_data, retryable=True
+        )
         six.raise_from(new_exc, caught_exc)
 
     payload = jwt.decode(id_token, verify=False)
@@ -326,7 +336,9 @@ def _handle_refresh_grant_response(response_data, refresh_token):
     try:
         access_token = response_data["access_token"]
     except KeyError as caught_exc:
-        new_exc = exceptions.RefreshError("No access token in response.", response_data)
+        new_exc = exceptions.RefreshError(
+            "No access token in response.", response_data, retryable=True
+        )
         six.raise_from(new_exc, caught_exc)
 
     refresh_token = response_data.get("refresh_token", refresh_token)

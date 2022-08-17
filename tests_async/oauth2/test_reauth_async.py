@@ -17,6 +17,8 @@ import copy
 import mock
 import pytest  # type: ignore
 
+from six.moves import http_client
+
 from google.auth import exceptions
 from google.oauth2 import _reauth_async
 from google.oauth2 import reauth
@@ -279,7 +281,11 @@ async def test_refresh_grant_failed():
     with mock.patch(
         "google.oauth2._client_async._token_endpoint_request_no_throw"
     ) as mock_token_request:
-        mock_token_request.return_value = (False, {"error": "Bad request"})
+        mock_token_request.return_value = (
+            False,
+            http_client.BAD_REQUEST,
+            {"error": "Bad request"},
+        )
         with pytest.raises(exceptions.RefreshError) as excinfo:
             await _reauth_async.refresh_grant(
                 MOCK_REQUEST,
@@ -311,8 +317,12 @@ async def test_refresh_grant_success():
         "google.oauth2._client_async._token_endpoint_request_no_throw"
     ) as mock_token_request:
         mock_token_request.side_effect = [
-            (False, {"error": "invalid_grant", "error_subtype": "rapt_required"}),
-            (True, {"access_token": "access_token"}),
+            (
+                False,
+                http_client.BAD_REQUEST,
+                {"error": "invalid_grant", "error_subtype": "rapt_required"},
+            ),
+            (True, http_client.OK, {"access_token": "access_token"}),
         ]
         with mock.patch(
             "google.oauth2._reauth_async.get_rapt_token", return_value="new_rapt_token"
@@ -339,8 +349,12 @@ async def test_refresh_grant_reauth_refresh_disabled():
         "google.oauth2._client_async._token_endpoint_request_no_throw"
     ) as mock_token_request:
         mock_token_request.side_effect = [
-            (False, {"error": "invalid_grant", "error_subtype": "rapt_required"}),
-            (True, {"access_token": "access_token"}),
+            (
+                False,
+                http_client.BAD_REQUEST,
+                {"error": "invalid_grant", "error_subtype": "rapt_required"},
+            ),
+            (True, http_client.OK, {"access_token": "access_token"}),
         ]
         with pytest.raises(exceptions.RefreshError) as excinfo:
             assert await _reauth_async.refresh_grant(

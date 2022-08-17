@@ -137,11 +137,22 @@ class TestCredentials(object):
 
     @mock.patch("google.auth.compute_engine._metadata.get", autospec=True)
     def test_refresh_error(self, get):
-        get.side_effect = exceptions.TransportError("http error")
+        get.side_effect = exceptions.TransportError("http error", retryable=True)
 
         with pytest.raises(exceptions.RefreshError) as excinfo:
             self.credentials.refresh(None)
 
+        assert excinfo.value.retryable
+        assert excinfo.match(r"http error")
+
+    @mock.patch("google.auth.compute_engine._metadata.get", autospec=True)
+    def test_unretryable_error(self, get):
+        get.side_effect = exceptions.TransportError("http error", retryable=False)
+
+        with pytest.raises(exceptions.RefreshError) as excinfo:
+            self.credentials.refresh(None)
+
+        assert not excinfo.value.retryable
         assert excinfo.match(r"http error")
 
     @mock.patch("google.auth.compute_engine._metadata.get", autospec=True)
@@ -610,7 +621,7 @@ class TestIDTokenCredentials(object):
         response = mock.Mock()
         response.data = b'{"error": "http error"}'
         response.status = 500
-        request.side_effect = [response]
+        request.side_effect = [response, response]
 
         self.credentials = credentials.IDTokenCredentials(
             request=request, target_audience="https://audience.com"
@@ -619,6 +630,7 @@ class TestIDTokenCredentials(object):
         with pytest.raises(exceptions.RefreshError) as excinfo:
             self.credentials.refresh(request)
 
+        assert excinfo.value.retryable
         assert excinfo.match(r"http error")
 
     @mock.patch(
