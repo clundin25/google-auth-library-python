@@ -44,6 +44,7 @@ import six  # pylint: disable=ungrouped-imports
 from google.auth import environment_vars
 from google.auth import exceptions
 from google.auth import transport
+from google.auth import _exponential_backoff
 import google.auth.transport._mtls_helper
 from google.oauth2 import service_account
 
@@ -547,10 +548,6 @@ class AuthorizedSession(requests.Session):
         # (method, url) are required. We pass through all of the other
         # arguments to super, so no need to exhaustively list them here.
 
-        # Use a kwarg for this instead of an attribute to maintain
-        # thread-safety.
-        _credential_refresh_attempt = kwargs.pop("_credential_refresh_attempt", 0)
-
         # Make a copy of the headers. They will be modified by the credentials
         # and we want to pass the original headers if we recurse.
         request_headers = headers.copy() if headers is not None else {}
@@ -580,46 +577,53 @@ class AuthorizedSession(requests.Session):
             )
         remaining_time = guard.remaining_timeout
 
+        if not self._can_retry(0, response.status_code):
+            return response
+
         # If the response indicated that the credentials needed to be
         # refreshed, then refresh the credentials and re-attempt the
         # request.
         # A stored token may expire between the time it is retrieved and
-        # the time the request is made, so we may need to try twice.
-        if self._can_retry(_credential_refresh_attempt, response.status_code):
+        # the time the request is made, so we may need to try atleast twice.
+        eb = _exponential_backoff.ExponentialBackoff()
+        for attempt in eb:
+            if self._can_retry(attempt, response.status_code):
 
-            _LOGGER.info(
-                "Refreshing credentials due to a %s response. Attempt %s/%s.",
-                response.status_code,
-                _credential_refresh_attempt + 1,
-                self._max_refresh_attempts,
-            )
+                _LOGGER.info(
+                    "Refreshing credentials due to a %s response. Attempt %s/%s.",
+                    response.status_code,
+                    attempt,
+                    eb.total_attempts,
+                )
 
-            # Do not apply the timeout unconditionally in order to not override the
-            # _auth_request's default timeout.
-            auth_request = (
-                self._auth_request
-                if timeout is None
-                else functools.partial(self._auth_request, timeout=timeout)
-            )
+                # Do not apply the timeout unconditionally in order to not override the
+                # _auth_request's default timeout.
+                auth_request = (
+                    self._auth_request
+                    if timeout is None
+                    else functools.partial(self._auth_request, timeout=timeout)
+                )
 
-            with TimeoutGuard(remaining_time) as guard:
-                self.credentials.refresh(auth_request)
-            remaining_time = guard.remaining_timeout
+                with TimeoutGuard(remaining_time) as guard:
+                    self.credentials.before_request(
+                        auth_request, method, url, request_headers
+                    )
+                remaining_time = guard.remaining_timeout
 
-            # Recurse. Pass in the original headers, not our modified set, but
-            # do pass the adjusted max allowed time (i.e. the remaining total time).
-            return self.request(
-                method,
-                url,
-                data=data,
-                headers=headers,
-                max_allowed_time=remaining_time,
-                timeout=timeout,
-                _credential_refresh_attempt=_credential_refresh_attempt + 1,
-                **kwargs
-            )
+                with TimeoutGuard(remaining_time) as guard:
+                    self.credentials.refresh(auth_request)
+                remaining_time = guard.remaining_timeout
 
-        return response
+                response = super(AuthorizedSession, self).request(
+                    method,
+                    url,
+                    data=data,
+                    headers=request_headers,
+                    timeout=timeout,
+                    **kwargs
+                )
+            else:
+                return response
 
     @property
     def is_mtls(self):

@@ -280,13 +280,13 @@ class TestAuthorizedSession(object):
         assert result == final_response
         assert credentials.before_request.call_count == 2
         assert credentials.refresh.called
+        assert credentials.refresh.call_count == 1
         assert len(adapter.requests) == 2
 
         assert adapter.requests[0].url == self.TEST_URL
         assert adapter.requests[0].headers["authorization"] == "token"
-
         assert adapter.requests[1].url == self.TEST_URL
-        assert adapter.requests[1].headers["authorization"] == "token1"
+        assert adapter.requests[1].headers["authorization"] == "token"
 
     def test_request_max_allowed_time_timeout_error(self, frozen_time):
         tick_one_second = functools.partial(
@@ -370,6 +370,7 @@ class TestAuthorizedSession(object):
         adapter = TimeTickAdapterStub(
             time_tick=tick_one_second,
             responses=[
+                make_response(status=http_client.UNAUTHORIZED),
                 make_response(status=http_client.UNAUTHORIZED),
                 make_response(status=http_client.OK),
             ],
