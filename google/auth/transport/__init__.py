@@ -44,7 +44,7 @@ DEFAULT_REFRESH_STATUS_CODES = (http_client.UNAUTHORIZED,)
 refreshed.
 """
 
-DEFAULT_MAX_REFRESH_ATTEMPTS = 2
+DEFAULT_MAX_REFRESH_ATTEMPTS = 3
 """int: How many times to refresh the credentials and retry a request."""
 
 
