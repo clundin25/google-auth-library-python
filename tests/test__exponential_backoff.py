@@ -23,15 +23,15 @@ from google.auth import exceptions
 def test_exponential_backoff(mock_time):
     eb = _exponential_backoff.ExponentialBackoff()
     count = 1
+    last_wait = eb._current_wait_in_seconds
     try:
-        for _ in eb:
+        for attempts in eb:
             backoff_interval = mock_time.call_args[0][0]
-            assert (
-                (eb._current_wait_in_seconds - eb._jitter)
-                < backoff_interval
-                < (eb._current_wait_in_seconds + eb._jitter)
-            )
+            jitter = last_wait * eb._randomization_factor
+            assert last_wait <= backoff_interval <= (last_wait + jitter)
+            assert attempts == count
 
+            last_wait = eb._current_wait_in_seconds
             count += 1
         assert (
             False
