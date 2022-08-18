@@ -41,6 +41,7 @@ class ExponentialBackoff(object):
         multiplier=_DEFAULT_MULTIPLIER,
     ):
         self._total_attempts = total_attempts
+        # convert milliseconds to seconds for the time.sleep API
         self._current_wait_in_seconds = initial_wait * 0.001
         self._randomization_factor = randomization_factor
         self._multiplier = multiplier
@@ -51,11 +52,9 @@ class ExponentialBackoff(object):
 
     def __next__(self):
         jitter_range = self._current_wait_in_seconds * self._randomization_factor
-        backoff_time_in_seconds = random.uniform(
-            self._current_wait_in_seconds - jitter_range,
-            self._current_wait_in_seconds + jitter_range,
-        )
-        time.sleep(backoff_time_in_seconds)
+        jitter = random.uniform(0, jitter_range)
+
+        time.sleep(self._current_wait_in_seconds + jitter)
 
         self._backoff_count += 1
         if self._backoff_count >= self._total_attempts:
