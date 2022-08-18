@@ -22,20 +22,24 @@ from google.auth import exceptions
 @mock.patch("time.sleep", return_value=None)
 def test_exponential_backoff(mock_time):
     eb = _exponential_backoff.ExponentialBackoff()
-    count = 1
-    last_wait = eb._current_wait_in_seconds
-    try:
-        for attempts in eb:
-            backoff_interval = mock_time.call_args[0][0]
-            jitter = last_wait * eb._randomization_factor
-            assert last_wait <= backoff_interval <= (last_wait + jitter)
-            assert attempts == count
+    curr_wait = eb._current_wait_in_seconds
+    iteration_count = 1
 
-            last_wait = eb._current_wait_in_seconds
-            count += 1
+    try:
+        for attempt in eb:
+            backoff_interval = mock_time.call_args[0][0]
+            jitter = curr_wait * eb._randomization_factor
+
+            assert curr_wait <= backoff_interval <= (curr_wait + jitter)
+            assert attempt == iteration_count
+            assert eb._backoff_count == iteration_count
+            assert eb._current_wait_in_seconds == eb._multiplier ** iteration_count
+
+            curr_wait = eb._current_wait_in_seconds
+            iteration_count += 1
         assert (
             False
         )  # We should hit the retry error exception since this loop is unbounded.
     except exceptions.RetryError:
-        assert count == _exponential_backoff._DEFAULT_RETRY_TOTAL_ATTEMPTS
+        assert iteration_count == _exponential_backoff._DEFAULT_RETRY_TOTAL_ATTEMPTS
     assert mock_time.call_count == _exponential_backoff._DEFAULT_RETRY_TOTAL_ATTEMPTS
