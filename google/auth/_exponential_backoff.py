@@ -28,7 +28,7 @@ _DEFAULT_INITIAL_INTERVAL_MILLIS = 1000
 _DEFAULT_RANDOMIZATION_FACTOR = 0.1
 
 # The default multiplier value (2 which is 100% increase per back off).
-_DEFAULT_MULTIPLIER = 2
+_DEFAULT_MULTIPLIER = 2.0
 
 
 class ExponentialBackoff(object):
@@ -37,12 +37,12 @@ class ExponentialBackoff(object):
         *,
         total_attempts=_DEFAULT_RETRY_TOTAL_ATTEMPTS,
         initial_wait=_DEFAULT_INITIAL_INTERVAL_MILLIS,
-        jitter=_DEFAULT_RANDOMIZATION_FACTOR,
+        randomization_factor=_DEFAULT_RANDOMIZATION_FACTOR,
         multiplier=_DEFAULT_MULTIPLIER,
     ):
         self._total_attempts = total_attempts
         self._current_wait_in_seconds = initial_wait * 0.001
-        self._jitter = jitter
+        self._randomization_factor = randomization_factor
         self._multiplier = multiplier
         self._backoff_count = 0
 
@@ -50,17 +50,27 @@ class ExponentialBackoff(object):
         return self
 
     def __next__(self):
-        jitter = random.uniform(
-            self._current_wait_in_seconds - self._jitter,
-            self._current_wait_in_seconds + self._jitter,
+        jitter_range = self._current_wait_in_seconds * self._randomization_factor
+        backoff_time_in_seconds = random.uniform(
+            self._current_wait_in_seconds - jitter_range,
+            self._current_wait_in_seconds + jitter_range,
         )
-        time.sleep(self._current_wait_in_seconds + jitter)
+        time.sleep(backoff_time_in_seconds)
 
         self._backoff_count += 1
-        if self._backoff_count == self._total_attempts:
+        if self._backoff_count >= self._total_attempts:
             raise exceptions.RetryError(
-                f"Ran out of retry attempts. Tried a total of {self._backoff_count} times."
+                f"Ran out of retry attempts. Tried a total of {self._backoff_count} "
+                f"times but the configured total retry count is {self._total_attempts}."
             )
 
         self._current_wait_in_seconds *= self._multiplier
+        return self._backoff_count
+
+    @property
+    def total_attempts(self):
+        return self._total_attempts
+
+    @property
+    def backoff_count(self):
         return self._backoff_count
