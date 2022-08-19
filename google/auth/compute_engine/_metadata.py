@@ -29,6 +29,7 @@ from six.moves.urllib import parse as urlparse
 from google.auth import _helpers
 from google.auth import environment_vars
 from google.auth import exceptions
+from google.auth import _exponential_backoff
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -79,8 +80,8 @@ def ping(request, timeout=_METADATA_DEFAULT_TIMEOUT, retry_count=3):
     #       could lead to false negatives in the event that we are on GCE, but
     #       the metadata resolution was particularly slow. The latter case is
     #       "unlikely".
-    retries = 0
-    while retries < retry_count:
+    eb = _exponential_backoff.ExponentialBackoff(total_attempts=retry_count)
+    for attempt in eb:
         try:
             response = request(
                 url=_METADATA_IP_ROOT,
@@ -99,17 +100,16 @@ def ping(request, timeout=_METADATA_DEFAULT_TIMEOUT, retry_count=3):
             _LOGGER.warning(
                 "Compute Engine Metadata server unavailable on "
                 "attempt %s of %s. Reason: %s",
-                retries + 1,
-                retry_count,
+                attempt,
+                eb.total_attempts,
                 e,
             )
-            retries += 1
 
     return False
 
 
 def get(
-    request, path, root=_METADATA_ROOT, params=None, recursive=False, retry_count=5
+    request, path, root=_METADATA_ROOT, params=None, recursive=False, retry_count=3
 ):
     """Fetch a resource from the metadata server.
 

@@ -107,6 +107,7 @@ class Request(transport.Request):
             response = connection.getresponse()
             return Response(response)
 
+        # TODO: Evaluate if this should be retryable
         except (http_client.HTTPException, socket.error) as caught_exc:
             new_exc = exceptions.TransportError(caught_exc)
             six.raise_from(new_exc, caught_exc)

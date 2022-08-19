@@ -30,7 +30,7 @@ _DEFAULT_RANDOMIZATION_FACTOR = 0.1
 # The default multiplier value (2 which is 100% increase per back off).
 _DEFAULT_MULTIPLIER = 2.0
 
-
+# Todo: Add a note about reusing
 class ExponentialBackoff(object):
     def __init__(
         self,
@@ -58,6 +58,7 @@ class ExponentialBackoff(object):
 
         self._backoff_count += 1
         if self._backoff_count >= self._total_attempts:
+            # TODO: Should we reset the backoff count here?
             raise exceptions.RetryError(
                 f"Ran out of retry attempts. Tried a total of {self._backoff_count} "
                 f"times but the configured total retry count is {self._total_attempts}."
