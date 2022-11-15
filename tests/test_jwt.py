@@ -144,7 +144,9 @@ def test_decode_payload_object(signer):
 
     with pytest.raises(ValueError) as excinfo:
         jwt.decode(payload, certs=PUBLIC_CERT_BYTES)
-    assert excinfo.match(r"Payload segment should be a JSON object: " + str(b"ImlhdGV4cCI"))
+    assert excinfo.match(
+        r"Payload segment should be a JSON object: " + str(b"ImlhdGV4cCI")
+    )
 
 
 def test_decode_valid_es256(token_factory):
