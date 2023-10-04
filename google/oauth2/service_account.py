@@ -196,7 +196,22 @@ class Credentials(
             self._additional_claims = additional_claims
         else:
             self._additional_claims = {}
+
         self._trust_boundary = {"locations": [], "encoded_locations": "0x0"}
+
+    def __getstate__(self):
+        """A __getstate__ method must exist for the __setstate__ to be called
+        This is identical to the default implementation.
+        See https://docs.python.org/3.7/library/pickle.html#object.__setstate__
+        """
+        state_dict = self.__dict__.copy()
+        # Remove _refresh_handler function as there are limitations pickling and
+        # unpickling certain callables (lambda, functools.partial instances)
+        # because they need to be importable.
+        # Instead, the refresh_handler setter should be used to repopulate this.
+        print(state_dict)
+        del state_dict["_signer"]
+        return state_dict
 
     @classmethod
     def _from_signer_and_info(cls, signer, info, **kwargs):

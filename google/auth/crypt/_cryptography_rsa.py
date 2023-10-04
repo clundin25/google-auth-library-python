@@ -92,14 +92,19 @@ class RSASigner(base.Signer, base.FromServiceAccountMixin):
         private_key (
                 cryptography.hazmat.primitives.asymmetric.rsa.RSAPrivateKey):
             The private key to sign with.
+        key_bytes: The raw bytes of the private_key. This is used to re-construct the signer after it is pickled.
         key_id (str): Optional key ID used to identify this private key. This
             can be useful to associate the private key with its associated
             public key or certificate.
     """
 
-    def __init__(self, private_key, key_id=None):
+    def __init__(self, private_key, key_pem, key_id=None):
         self._key = private_key
         self._key_id = key_id
+        # The key_pem field is used to store the raw bytes of the key. This is
+        # so credential objects that rely on this class can be pickled and
+        # unpickled.
+        self._key_bytes = key_pem
 
     @property  # type: ignore
     @_helpers.copy_docstring(base.Signer)
@@ -129,8 +134,8 @@ class RSASigner(base.Signer, base.FromServiceAccountMixin):
                 into a UTF-8 ``str``.
             ValueError: If ``cryptography`` "Could not deserialize key data."
         """
-        key = _helpers.to_bytes(key)
+        key_bytes = _helpers.to_bytes(key)
         private_key = serialization.load_pem_private_key(
-            key, password=None, backend=_BACKEND
+            key_bytes, password=None, backend=_BACKEND
         )
-        return cls(private_key, key_id=key_id)
+        return cls(private_key, key, key_id=key_id)

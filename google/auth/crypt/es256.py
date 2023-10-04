@@ -113,9 +113,13 @@ class ES256Signer(base.Signer, base.FromServiceAccountMixin):
             public key or certificate.
     """
 
-    def __init__(self, private_key, key_id=None):
+    def __init__(self, private_key, key_pem, key_id=None):
         self._key = private_key
         self._key_id = key_id
+        # The key_pem field is used to store the raw bytes of the key. This is
+        # so credential objects that rely on this class can be pickled and
+        # unpickled.
+        self._key_bytes = key_pem
 
     @property  # type: ignore
     @_helpers.copy_docstring(base.Signer)
@@ -153,8 +157,8 @@ class ES256Signer(base.Signer, base.FromServiceAccountMixin):
                 into a UTF-8 ``str``.
             ValueError: If ``cryptography`` "Could not deserialize key data."
         """
-        key = _helpers.to_bytes(key)
+        key_bytes = _helpers.to_bytes(key)
         private_key = serialization.load_pem_private_key(
-            key, password=None, backend=_BACKEND
+            key_bytes, password=None, backend=_BACKEND
         )
-        return cls(private_key, key_id=key_id)
+        return cls(private_key, key, key_id=key_id)
