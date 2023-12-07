@@ -18,6 +18,7 @@ from __future__ import absolute_import
 
 import logging
 import os
+import inspect
 
 from google.auth import environment_vars
 from google.auth import exceptions
@@ -78,10 +79,22 @@ class AuthMetadataPlugin(grpc.AuthMetadataPlugin):
                 "https://{}/".format(self._default_host) if self._default_host else None
             )
 
-        self._credentials.before_request(
-            self._request, context.method_name, context.service_url, headers
-        )
+        if inspect.iscoroutinefunction(self._credentials.before_request):
+            import asyncio
 
+            auth_futurue = self._credentials.before_request(
+                self._request, context.method_name, context.service_url, headers
+            )
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                asyncio.run(auth_futurue)
+            else:
+                loop.run_until_complete(auth_futurue)
+        else:
+            self._credentials.before_request(
+                self._request, context.method_name, context.service_url, headers
+            )
         return list(headers.items())
 
     def __call__(self, context, callback):

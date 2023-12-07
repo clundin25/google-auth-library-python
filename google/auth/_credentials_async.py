@@ -58,12 +58,26 @@ class Credentials(credentials.Credentials, metaclass=abc.ABCMeta):
         # pylint: disable=unused-argument
         # (Subclasses may use these arguments to ascertain information about
         # the http request.)
+        if self.token_state == credentials.TokenState.FRESH:
+            self._refresh_worker.flush_error_queue()
 
-        if not self.valid:
+        if self.token_state == credentials.TokenState.STALE:
+            if (
+                inspect.iscoroutinefunction(self.refresh)
+                and self._use_non_blocking_refresh
+            ):
+                self._refresh_worker.start_refresh(self, request, use_coroutine=True)
+            elif self._use_non_blocking_refresh:
+                self._refresh_worker.start_refresh(self, request)
+            else:
+                self.refresh(request)
+
+        if self.token_state == credentials.TokenState.INVALID:
             if inspect.iscoroutinefunction(self.refresh):
                 await self.refresh(request)
             else:
                 self.refresh(request)
+
         self.apply(headers)
 
 

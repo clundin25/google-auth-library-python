@@ -195,7 +195,7 @@ class Credentials(metaclass=abc.ABCMeta):
         if self.token_state == TokenState.STALE:
             if (
                 self._use_non_blocking_refresh
-                and not self._refresh_worker.error_queue_full()
+                and self._refresh_worker.error_queue_full()
             ):
                 self._refresh_worker.start_refresh(self, request)
             else:

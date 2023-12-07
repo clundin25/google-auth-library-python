@@ -31,11 +31,15 @@ Authorization Code grant flow.
 .. _rfc6749 section 4.1: https://tools.ietf.org/html/rfc6749#section-4.1
 """
 
+import inspect
+
 from google.auth import _credentials_async as credentials
+from google.auth import credentials as credentials_base
 from google.auth import _helpers
 from google.auth import exceptions
 from google.oauth2 import _reauth_async as reauth
 from google.oauth2 import credentials as oauth2_credentials
+
 
 
 class Credentials(oauth2_credentials.Credentials):
@@ -95,6 +99,54 @@ class Credentials(oauth2_credentials.Credentials):
                         ", ".join(scopes_requested_but_not_granted)
                     )
                 )
+        print("Completed refresh")
+
+    async def before_request(self, request, method, url, headers):
+        """Performs credential-specific before request logic.
+
+        Refreshes the credentials if necessary, then calls :meth:`apply` to
+        apply the token to the authentication header.
+
+        Args:
+            request (google.auth.transport.Request): The object used to make
+                HTTP requests.
+            method (str): The request's HTTP method or the RPC method being
+                invoked.
+            url (str): The request's URI or the RPC service's URI.
+            headers (Mapping): The request's headers.
+        """
+        # pylint: disable=unused-argument
+        # (Subclasses may use these arguments to ascertain information about
+        # the http request.)
+        print(f"{self.token_state=}")
+
+        if self.token_state == credentials_base.TokenState.FRESH:
+            self._refresh_worker.flush_error_queue()
+
+        if self.token_state == credentials_base.TokenState.STALE:
+            print("state is STALE")
+            if (
+                inspect.iscoroutinefunction(self.refresh)
+                and self._use_non_blocking_refresh
+            ):
+                print("Non-blocking refresh")
+                self._refresh_worker.start_refresh(self, request, use_coroutine=True)
+            elif self._use_non_blocking_refresh:
+                self._refresh_worker.start_refresh(self, request)
+            else:
+                self.refresh(request)
+
+        if self.token_state == credentials_base.TokenState.INVALID:
+            print("state is invalid")
+            if inspect.iscoroutinefunction(self.refresh):
+                print("blocking refresh")
+                await self.refresh(request)
+            else:
+                print("Performing refresh")
+                self.refresh(request)
+        print("Applied headers")
+        self.apply(headers)
+
 
 
 class UserAccessTokenCredentials(oauth2_credentials.UserAccessTokenCredentials):

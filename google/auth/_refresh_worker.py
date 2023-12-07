@@ -15,6 +15,8 @@
 import logging
 import queue
 import threading
+import inspect
+import asyncio
 
 import google.auth.exceptions as e
 
@@ -38,9 +40,13 @@ class RefreshWorker:
         # Bound the error queue to avoid infinitely growing the heap.
         self._error_queue = queue.Queue(self.MAX_ERROR_QUEUE_SIZE)
         self._worker = None
+        self._task = None
 
     def _need_worker(self):
         return self._worker is None or not self._worker.is_alive()
+
+    def _need_task(self):
+        return self._task is None or self._task.done()
 
     def _spawn_worker(self):
         self._worker = RefreshThread(
@@ -48,7 +54,7 @@ class RefreshWorker:
         )
         self._worker.start()
 
-    def start_refresh(self, cred, request):
+    def start_refresh(self, cred, request, use_coroutine=False):
         """Starts a refresh thread for the given credentials.
         The credentials are refreshed using the request parameter.
         request and cred MUST not be None
@@ -62,24 +68,30 @@ class RefreshWorker:
                 "Unable to start refresh. cred and request must be valid and instantiated objects."
             )
 
-        # This test case is covered by the unit tests but sometimes the cover
-        # check can flake due to the schdule.
-        #
-        # Specifially this test is covered by test_refresh_dead_worker
-        if not self._refresh_queue.empty():  # pragma: NO COVER
-            if self._need_worker():
+        if use_coroutine and inspect.iscoroutinefunction(request):
+            if self._need_task():
+                self._task = asyncio.create_task(
+                    coroutine_refresh(cred, request, self._error_queue)
+                )
+        else:
+            # This test case is covered by the unit tests but sometimes the cover
+            # check can flake due to the schedule.
+            #
+            # Specifically this test is covered by test_refresh_dead_worker
+            if not self._refresh_queue.empty():  # pragma: NO COVER
+                if self._need_worker():
+                    self._spawn_worker()
+                return
+
+            try:
+                self._refresh_queue.put_nowait((cred, request))
+            except queue.Full:
+                return
+
+            # This test case is covered by the unit tests but sometimes the cover
+            # check can flake due to the schedule.
+            if self._need_worker():  # pragma: NO COVER
                 self._spawn_worker()
-            return
-
-        try:
-            self._refresh_queue.put_nowait((cred, request))
-        except queue.Full:
-            return
-
-        # This test case is covered by the unit tests but sometimes the cover
-        # check can flake due to the schdule.
-        if self._need_worker():  # pragma: NO COVER
-            self._spawn_worker()
 
     def error_queue_full(self):
         """
@@ -112,6 +124,18 @@ class RefreshWorker:
             return self._error_queue.get_nowait()
         except queue.Empty:
             return None
+
+
+async def coroutine_refresh(cred, request, error_queue):
+    try:
+        async with asyncio.timeout(WORKER_TIMEOUT_SECONDS):
+            await cred.refresh(request)
+    except Exception as err:  # pragma: NO COVER
+        # This condition is covered by the unit test test_refresh_error but
+        # it can be flaky due to the scheduler.
+        _LOGGER.error(f"Background refresh failed due to: {err}")
+        if not error_queue.full():
+            error_queue.put_nowait(err)
 
 
 class RefreshThread(threading.Thread):
@@ -157,6 +181,6 @@ class RefreshThread(threading.Thread):
             if not self._error_queue.full():
                 self._error_queue.put_nowait(err)
 
-        # The coverage tool is not able to capturre this line, but it is covered
+        # The coverage tool is not able to capture this line, but it is covered
         # by test_start_refresh in the unit tests.
         self._work_queue.task_done()
