@@ -86,6 +86,11 @@ class ExponentialBackoff:
         if self._backoff_count >= self._total_attempts:
             raise StopIteration
         self._backoff_count += 1
+        print(f"{self._backoff_count=}")
+
+        if self._backoff_count <= 1:
+            return self._backoff_count
+
 
         jitter_variance = self._current_wait_in_seconds * self._randomization_factor
         jitter = random.uniform(
@@ -93,6 +98,7 @@ class ExponentialBackoff:
             self._current_wait_in_seconds + jitter_variance,
         )
 
+        print(f"sleeping {jitter=}")
         time.sleep(jitter)
 
         self._current_wait_in_seconds *= self._multiplier
