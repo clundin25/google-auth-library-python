@@ -91,7 +91,6 @@ class ExponentialBackoff:
         if self._backoff_count <= 1:
             return self._backoff_count
 
-
         jitter_variance = self._current_wait_in_seconds * self._randomization_factor
         jitter = random.uniform(
             self._current_wait_in_seconds - jitter_variance,

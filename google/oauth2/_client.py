@@ -208,15 +208,10 @@ def _token_endpoint_request_no_throw(
 
         return False, response_data, retryable_error
 
-    request_succeeded, response_data, retryable_error = _perform_request()
-
-    if request_succeeded or not retryable_error or not can_retry:
-        return request_succeeded, response_data, retryable_error
-
     retries = _exponential_backoff.ExponentialBackoff()
     for _ in retries:
         request_succeeded, response_data, retryable_error = _perform_request()
-        if request_succeeded or not retryable_error:
+        if not can_retry or request_succeeded or not retryable_error:
             return request_succeeded, response_data, retryable_error
 
     return False, response_data, retryable_error
