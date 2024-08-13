@@ -69,6 +69,7 @@ class ExponentialBackoff:
         initial_wait_seconds=_DEFAULT_INITIAL_INTERVAL_SECONDS,
         randomization_factor=_DEFAULT_RANDOMIZATION_FACTOR,
         multiplier=_DEFAULT_MULTIPLIER,
+        sleep_callback=time.sleep,
     ):
         if total_attempts < 1:
             raise exceptions.InvalidValue(
@@ -83,6 +84,7 @@ class ExponentialBackoff:
         self._randomization_factor = randomization_factor
         self._multiplier = multiplier
         self._backoff_count = 0
+        self._sleep_callback = sleep_callback
 
     def __iter__(self):
         self._backoff_count = 0
@@ -103,7 +105,7 @@ class ExponentialBackoff:
             self._current_wait_in_seconds + jitter_variance,
         )
 
-        time.sleep(jitter)
+        self._sleep_callback(jitter)
 
         self._current_wait_in_seconds *= self._multiplier
         return self._backoff_count

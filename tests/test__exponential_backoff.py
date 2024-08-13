@@ -21,7 +21,7 @@ from google.auth import exceptions
 
 @mock.patch("time.sleep", return_value=None)
 def test_exponential_backoff(mock_time):
-    eb = _exponential_backoff.ExponentialBackoff()
+    eb = _exponential_backoff.ExponentialBackoff(sleep_callback=mock_time)
     curr_wait = eb._current_wait_in_seconds
     iteration_count = 0
 
@@ -46,6 +46,21 @@ def test_exponential_backoff(mock_time):
     assert (
         mock_time.call_count == _exponential_backoff._DEFAULT_RETRY_TOTAL_ATTEMPTS - 1
     )
+
+
+def test_async_exponential_backoff():
+    import asyncio
+
+    custom_sleep_call_count = 0
+
+    def _custom_sleep(time):
+        nonlocal custom_sleep_call_count
+        custom_sleep_call_count += 1
+        asyncio.run(asyncio.sleep(time))
+
+    eb = _exponential_backoff.ExponentialBackoff(sleep_callback=_custom_sleep)
+    for attempt in eb:
+        assert custom_sleep_call_count == attempt - 1
 
 
 def test_minimum_total_attempts():
